@@ -58,7 +58,7 @@ export const register = async (req, res) => {
             email,
             otp: hashedOtp,
             purpose: 'verify',
-            expiresAt: new Date(Date.now() + 45 * 1000), // 45 sec
+            expiresAt: new Date(Date.now() + 1 * 60 * 1000), // 1 min
         });
 
         // Send OTP
@@ -284,7 +284,7 @@ export const requestPasswordReset = async (req, res) => {
             email,
             otp: hashedOtp,
             purpose: 'reset',
-            expiresAt: new Date(Date.now() + 45 * 1000), // 45 seconds
+            expiresAt: new Date(Date.now() + 5 * 60 * 1000), // 5 minutes
         });
 
         // Send OTP
@@ -398,7 +398,7 @@ export const updateProfile = async (req, res) => {
                 email,
                 otp: hashedOtp,
                 purpose: 'verify',
-                expiresAt: new Date(Date.now() + 45 * 1000), // 45 seconds
+                expiresAt: new Date(Date.now() + 5 * 60 * 1000), // 5 minutes
             });
 
             await sendEmail({
@@ -501,7 +501,7 @@ export const resendOtp = async (req, res) => {
             email,
             otp: hashedOtp,
             purpose: 'verify',
-            expiresAt: new Date(Date.now() + 45 * 1000), // 45 seconds
+            expiresAt: new Date(Date.now() + 5 * 60 * 1000), // 5 minutes
         });
 
         // Send OTP

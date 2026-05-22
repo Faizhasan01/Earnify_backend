@@ -1,32 +1,72 @@
-import nodemailer from 'nodemailer';
+import https from 'https';
 
+// email via resend api
 const sendEmail = async ({ to, subject, text, html }) => {
     try {
-        // Create a transporter using Gmail SMTP
-        const transporter = nodemailer.createTransport({
-            service: 'gmail',
-            auth: {
-                user: process.env.EMAIL_USER,
-                pass: process.env.EMAIL_PASS,
-            },
-            connectionTimeout: 6000, // 6 seconds connection timeout
-            greetingTimeout: 6000,   // 6 seconds greeting timeout
-            socketTimeout: 10000,    // 10 seconds socket timeout
+        const apiKey = process.env.RESEND_API_KEY;
+        const fromEmail = process.env.RESEND_FROM || 'Earnify <onboarding@resend.dev>';
+
+        if (!apiKey) {
+            console.error("Resend API Key is missing in environment variables!");
+            return false;
+        }
+
+        const data = JSON.stringify({
+            from: fromEmail,
+            to: Array.isArray(to) ? to : [to],
+            subject: subject,
+            text: text,
+            html: html || text,
         });
 
-        const mailOptions = {
-            from: `Earnify <${process.env.EMAIL_USER}>`,
-            to,
-            subject,
-            text,
-            html,
+        const options = {
+            hostname: 'api.resend.com',
+            port: 443,
+            path: '/emails',
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${apiKey}`,
+                'Content-Length': Buffer.byteLength(data),
+            },
         };
 
-        const info = await transporter.sendMail(mailOptions);
-        console.log(`Email sent: ${info.response}`);
+        const response = await new Promise((resolve, reject) => {
+            const req = https.request(options, (res) => {
+                let responseBody = '';
+                res.on('data', (chunk) => {
+                    responseBody += chunk;
+                });
+                res.on('end', () => {
+                    if (res.statusCode >= 200 && res.statusCode < 300) {
+                        try {
+                            resolve(JSON.parse(responseBody));
+                        } catch (parseError) {
+                            resolve({ id: 'unknown', body: responseBody });
+                        }
+                    } else {
+                        reject(new Error(`Resend API Error: ${res.statusCode} - ${responseBody}`));
+                    }
+                });
+            });
+
+            req.on('error', (error) => {
+                reject(error);
+            });
+
+            // Set an explicit connection/socket timeout of 8 seconds
+            req.setTimeout(8000, () => {
+                req.destroy(new Error('Request Timeout (8s)'));
+            });
+
+            req.write(data);
+            req.end();
+        });
+
+        console.log(`Email sent successfully via Resend. ID: ${response.id}`);
         return true;
     } catch (error) {
-        console.error(`Error sending email: ${error.message}`);
+        console.error(`Error sending email via Resend: ${error.message}`);
         return false;
     }
 };
