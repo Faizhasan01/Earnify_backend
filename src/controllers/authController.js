@@ -29,8 +29,7 @@ export const register = async (req, res) => {
 
         let user;
         if (userExists) {
-            // If the user exists but is NOT verified, update their registration details.
-            // Password will be automatically re-hashed via the User pre-save hook.
+            // If the user exists but is NOT verified
             userExists.name = name;
             userExists.password = password;
             userExists.role = role || 'buyer';
@@ -46,12 +45,12 @@ export const register = async (req, res) => {
             });
         }
 
-        // Generate 6-digit OTP
+        // generate OTP
         const otp = Math.floor(100000 + Math.random() * 900000).toString();
         const salt = await bcrypt.genSalt(10);
         const hashedOtp = await bcrypt.hash(otp, salt);
 
-        // Delete any existing verification OTPs for this email to prevent duplicates
+        // Delete any existing verification otp to prevent duplicates
         await OTP.deleteMany({ email, purpose: 'verify' });
 
         // Save OTP document
