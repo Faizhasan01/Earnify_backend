@@ -20,21 +20,31 @@ export const register = async (req, res) => {
         // Check user exists already
         const userExists = await User.findOne({ email });
 
-        if (userExists) {
+        if (userExists && userExists.isVerified) {
             return res.status(400).json({
                 success: false,
                 message: 'User already exists',
             });
         }
 
-        // Create user
-        const user = await User.create({
-            name,
-            email,
-            password,
-            role: role || 'buyer',
-            isVerified: false,
-        });
+        let user;
+        if (userExists) {
+            // If the user exists but is NOT verified, update their registration details.
+            // Password will be automatically re-hashed via the User pre-save hook.
+            userExists.name = name;
+            userExists.password = password;
+            userExists.role = role || 'buyer';
+            user = await userExists.save();
+        } else {
+            // Create user
+            user = await User.create({
+                name,
+                email,
+                password,
+                role: role || 'buyer',
+                isVerified: false,
+            });
+        }
 
         // Generate 6-digit OTP
         const otp = Math.floor(100000 + Math.random() * 900000).toString();
@@ -54,11 +64,21 @@ export const register = async (req, res) => {
 
         // Send OTP
         const message = `Your email verification OTP is: ${otp}\nIt will expire in 5 minutes.`;
-        await sendEmail({
+        const emailSent = await sendEmail({
             to: email,
             subject: 'Earnify - Verify your Email',
             text: message,
         });
+
+        if (!emailSent) {
+            // Delete user and OTP if email fails so they can try again
+            await User.findByIdAndDelete(user._id);
+            await OTP.deleteMany({ email, purpose: 'verify' });
+            return res.status(500).json({
+                success: false,
+                message: 'Failed to send OTP email. Please try again later.',
+            });
+        }
 
         res.status(201).json({
             success: true,
@@ -426,6 +446,66 @@ export const updatePassword = async (req, res) => {
 
     } catch (error) {
         console.error(`Error in updatePassword: ${error.message}`);
+        res.status(500).json({ success: false, message: 'Internal Server Error' });
+    }
+};
+
+export const resendOtp = async (req, res) => {
+    try {
+        const { email } = req.body;
+
+        if (!email) {
+            return res.status(400).json({ success: false, message: 'Please provide an email' });
+        }
+
+        const user = await User.findOne({ email });
+
+        if (!user) {
+            return res.status(404).json({ success: false, message: 'User not found' });
+        }
+
+        if (user.isVerified) {
+            return res.status(400).json({ success: false, message: 'User is already verified' });
+        }
+
+        // Generate 6-digit OTP
+        const otp = Math.floor(100000 + Math.random() * 900000).toString();
+        const salt = await bcrypt.genSalt(10);
+        const hashedOtp = await bcrypt.hash(otp, salt);
+
+        // Delete any existing verification OTPs for this email to prevent duplicates
+        await OTP.deleteMany({ email, purpose: 'verify' });
+
+        // Save OTP document
+        await OTP.create({
+            email,
+            otp: hashedOtp,
+            purpose: 'verify',
+            expiresAt: new Date(Date.now() + 5 * 60 * 1000), // 5 minutes
+        });
+
+        // Send OTP
+        const message = `Your new email verification OTP is: ${otp}\nIt will expire in 5 minutes.`;
+        const emailSent = await sendEmail({
+            to: email,
+            subject: 'Earnify - Verify your Email (Resend)',
+            text: message,
+        });
+
+        if (!emailSent) {
+            return res.status(500).json({
+                success: false,
+                message: 'Failed to send OTP email. Please try again later.',
+            });
+        }
+
+        res.status(200).json({
+            success: true,
+            message: 'A new OTP has been sent to your email',
+        });
+
+    } catch (error) {
+        console.error(`Error in resendOtp: ${error.message}`);
         res.status(500).json({ success: false, message: 'Internal Server Error' });
     }
 };
